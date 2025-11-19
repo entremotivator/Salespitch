@@ -99,6 +99,12 @@ if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
 if 'generated_scripts' not in st.session_state:
     st.session_state.generated_scripts = []
+if 'current_analysis' not in st.session_state:
+    st.session_state.current_analysis = None
+if 'ai_model' not in st.session_state:
+    st.session_state.ai_model = "gpt-4o-mini"
+if 'temperature' not in st.session_state:
+    st.session_state.temperature = 0.7
 
 
 SERVICES = {
@@ -394,12 +400,12 @@ Generate the sales pitch now:"""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=st.session_state.ai_model,
             messages=[
                 {"role": "system", "content": "You are an expert sales professional specializing in AI technology solutions. You create compelling, personalized pitches that resonate with prospects and drive action."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
+            temperature=st.session_state.temperature,
             max_tokens=800
         )
         return response.choices[0].message.content
@@ -434,12 +440,12 @@ Format your response as JSON with keys: "empathetic", "logic", "story", and "tip
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=st.session_state.ai_model,
             messages=[
                 {"role": "system", "content": "You are a master sales trainer who excels at handling objections. You provide strategic, empathetic, and effective responses."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
+            temperature=st.session_state.temperature,
             max_tokens=1000,
             response_format={"type": "json_object"}
         )
@@ -486,12 +492,12 @@ Generate the complete script with clear sections and formatting:"""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=st.session_state.ai_model,
             messages=[
                 {"role": "system", "content": "You are an expert sales script writer who creates natural, effective scripts for B2B technology sales. Your scripts feel conversational, not robotic."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
+            temperature=st.session_state.temperature,
             max_tokens=1500
         )
         
@@ -533,7 +539,7 @@ Provide analysis in JSON format with:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=st.session_state.ai_model,
             messages=[
                 {"role": "system", "content": "You are an expert sales coach who analyzes pitches for effectiveness, clarity, and persuasiveness."},
                 {"role": "user", "content": prompt}
@@ -613,9 +619,11 @@ with st.sidebar:
             # AI Model Selection
             ai_model = st.selectbox(
                 "AI Model",
-                ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+                ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
+                index=0,
                 help="Select the AI model for generation"
             )
+            st.session_state.ai_model = ai_model
             
             # Temperature control
             temperature = st.slider(
@@ -626,6 +634,7 @@ with st.sidebar:
                 step=0.1,
                 help="Higher values = more creative, Lower values = more focused"
             )
+            st.session_state.temperature = temperature
         else:
             st.markdown('<div class="api-status api-inactive">✗ AI Features Inactive</div>', unsafe_allow_html=True)
             st.info("Add your OpenAI API key to unlock AI-powered pitch generation, script creation, and analysis.")
@@ -729,6 +738,8 @@ if tool_mode == "📝 Pitch Generator":
         company_name = st.text_input("Company Name (optional)", placeholder="Acme Corp")
     
     # AI-specific fields
+    company_info = ""
+    additional_context = ""
     if generation_mode == "AI-Powered (Recommended)":
         st.subheader("Additional Context for AI")
         company_info = st.text_area(
@@ -746,16 +757,15 @@ if tool_mode == "📝 Pitch Generator":
     with col_btn1:
         generate_btn = st.button("🚀 Generate Pitch", type="primary", use_container_width=True)
     with col_btn2:
-        if generation_mode == "AI-Powered (Recommended)":
-            regenerate_btn = st.button("🔄 Regenerate", use_container_width=True)
+        regenerate_btn = st.button("🔄 Regenerate", use_container_width=True)
     
-    if generate_btn or (generation_mode == "AI-Powered (Recommended)" and 'regenerate_btn' in locals() and regenerate_btn):
+    if generate_btn or (generation_mode == "AI-Powered (Recommended)" and regenerate_btn):
         with st.spinner("Crafting your perfect pitch..."):
             if generation_mode == "AI-Powered (Recommended)" and st.session_state.openai_api_key:
                 pitch = generate_ai_pitch(
                     selected_service, selected_industry, selected_tone, 
-                    pain_points, company_info if 'company_info' in locals() else "",
-                    prospect_name, additional_context if 'additional_context' in locals() else ""
+                    pain_points, company_info,
+                    prospect_name, additional_context
                 )
                 box_class = "ai-pitch-box"
                 title = "Your AI-Generated Pitch"
@@ -904,7 +914,7 @@ elif tool_mode == "🛡️ Objection Handler":
             st.markdown("### Recommended Responses")
             
             for idx, response in enumerate(category_data["responses"], 1):
-                st.markdown(f'<div class="response-box">', unsafe_allow_html=True)
+                st.markdown('<div class="response-box">', unsafe_allow_html=True)
                 st.markdown(f"**Response Option {idx}:**")
                 st.markdown(response)
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -1028,6 +1038,44 @@ elif tool_mode == "📊 Pitch Analyzer":
     if not st.session_state.openai_api_key:
         st.warning("⚠️ OpenAI API key required for pitch analysis.")
     else:
+        if st.session_state.current_analysis:
+            st.success("Previous analysis found. Displaying below or clear to analyze new pitch.")
+            analysis = st.session_state.current_analysis
+            col_score1, col_score2, col_score3 = st.columns(3)
+            
+            with col_score1:
+                st.metric("Overall Score", f"{analysis.get('score', 0)}/100")
+            with col_score2:
+                st.metric("Clarity", f"{analysis.get('clarity_score', 0)}/100")
+            with col_score3:
+                st.metric("Persuasiveness", f"{analysis.get('persuasiveness_score', 0)}/100")
+            
+            col_analysis1, col_analysis2 = st.columns(2)
+            
+            with col_analysis1:
+                st.markdown("### ✅ Strengths")
+                for strength in analysis.get('strengths', []):
+                    st.success(f"• {strength}")
+                
+                st.markdown("### 💡 Suggestions")
+                for suggestion in analysis.get('suggestions', []):
+                    st.info(f"• {suggestion}")
+            
+            with col_analysis2:
+                st.markdown("### ⚠️ Areas for Improvement")
+                for weakness in analysis.get('weaknesses', []):
+                    st.warning(f"• {weakness}")
+                
+                st.markdown("### 🎭 Tone Analysis")
+                st.write(analysis.get('tone_analysis', 'N/A'))
+                
+                st.markdown("### 📞 Call-to-Action")
+                st.write(analysis.get('call_to_action', 'N/A'))
+            
+            if st.button("Clear Analysis", key="clear_analysis"):
+                st.session_state.current_analysis = None
+                st.rerun()
+
         st.info("Paste your sales pitch below to get detailed AI analysis and improvement suggestions.")
         
         pitch_to_analyze = st.text_area(
@@ -1042,6 +1090,9 @@ elif tool_mode == "📊 Pitch Analyzer":
                     analysis = analyze_pitch_effectiveness(pitch_to_analyze)
                     
                     if "error" not in analysis:
+                        st.session_state.current_analysis = analysis
+                        st.success("Analysis complete! Displaying results below.")
+                        
                         col_score1, col_score2, col_score3 = st.columns(3)
                         
                         with col_score1:
